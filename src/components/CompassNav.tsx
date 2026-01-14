@@ -25,12 +25,13 @@ const CompassNav: React.FC<CompassNavProps> = ({
   const targetRef = useRef(60);
   const animationFrameRef = useRef<number>();
 
-  // Transform angles based on orientation
+  // Transform angles based on orientation for needle rotation
   // Right semicircle: angles from +90 to -90 (original)
-  // Top semicircle: angles from 180 to 0 (rotate by 90 degrees)
+  // Top semicircle: angles from 180 to 0 - needle points upward
   const transformAngle = useCallback((angle: number) => {
     if (orientation === 'top') {
-      return angle - 90; // Rotate 90° counter-clockwise
+      // For top orientation, convert the right-side angle to upward-pointing
+      return -(180 - angle); // Needle points up into the arc
     }
     return angle;
   }, [orientation]);
@@ -42,7 +43,7 @@ const CompassNav: React.FC<CompassNavProps> = ({
 
   // Pivot and geometry based on orientation
   const isTop = orientation === 'top';
-  const pivot = isTop ? { x: 100, y: 0 } : { x: 0, y: 100 };
+  const pivot = isTop ? { x: 100, y: 100 } : { x: 0, y: 100 };
   const dotRadius = 72;
   const labelOffset = 22;
 
@@ -94,9 +95,18 @@ const CompassNav: React.FC<CompassNavProps> = ({
   };
 
   const calculatePosition = (angle: number) => {
-    // For top orientation, rotate the angle by -90 degrees
-    const adjustedAngle = isTop ? angle - 90 : angle;
-    const rad = (-adjustedAngle) * Math.PI / 180;
+    if (isTop) {
+      // For top orientation: arc curves upward, labels above, pivot at bottom center
+      // Angle 60 = left side, angle -60 = right side
+      const rad = (180 - angle) * Math.PI / 180;
+      const cx = pivot.x + Math.cos(rad) * dotRadius;
+      const cy = pivot.y - Math.sin(rad) * dotRadius;
+      const tx = pivot.x + Math.cos(rad) * (dotRadius + labelOffset);
+      const ty = pivot.y - Math.sin(rad) * (dotRadius + labelOffset);
+      return { cx, cy, tx, ty };
+    }
+    // Right orientation: original behavior
+    const rad = (-angle) * Math.PI / 180;
     const cx = pivot.x + Math.cos(rad) * dotRadius;
     const cy = pivot.y + Math.sin(rad) * dotRadius;
     const tx = pivot.x + Math.cos(rad) * (dotRadius + labelOffset);
@@ -107,11 +117,12 @@ const CompassNav: React.FC<CompassNavProps> = ({
   // Generate arc paths based on orientation
   const getArcPaths = () => {
     if (isTop) {
-      // Top semicircle (180° to 0°) - arc below the pivot point
+      // Top semicircle - arc curves upward from pivot at bottom center (y=100)
+      // Sweep flag 0 = arc curves upward
       return {
-        outer: "M 20,0 A 80 80 0 0 1 180,0",
-        middle: "M 32,0 A 68 68 0 0 1 168,0",
-        inner: "M 10,0 A 90 90 0 0 1 190,0"
+        outer: "M 20,100 A 80 80 0 0 0 180,100",
+        middle: "M 32,100 A 68 68 0 0 0 168,100",
+        inner: "M 10,100 A 90 90 0 0 0 190,100"
       };
     }
     // Right semicircle (90° to -90°) - original
@@ -134,7 +145,7 @@ const CompassNav: React.FC<CompassNavProps> = ({
 
   const getTextDominantBaseline = (angle: number) => {
     if (isTop) {
-      return "hanging";
+      return "auto";
     }
     return "middle";
   };
@@ -146,7 +157,7 @@ const CompassNav: React.FC<CompassNavProps> = ({
         : "w-[280px] sm:w-[320px] md:w-[360px] lg:w-[400px] max-w-full"
       }>
         <svg 
-          viewBox={isTop ? "0 -10 200 110" : "0 0 200 200"}
+          viewBox={isTop ? "0 0 200 110" : "0 0 200 200"}
           preserveAspectRatio="xMidYMid meet" 
           className="w-full h-auto compass-shadow"
         >
