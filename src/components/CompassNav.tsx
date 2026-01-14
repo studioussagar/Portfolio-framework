@@ -10,21 +10,39 @@ interface CompassNavProps {
   items: NavItem[];
   activeSection: string;
   onNavigate: (sectionId: string) => void;
+  orientation?: 'right' | 'top'; // right = right semicircle, top = top semicircle (for bottom nav)
 }
 
-const CompassNav: React.FC<CompassNavProps> = ({ items, activeSection, onNavigate }) => {
+const CompassNav: React.FC<CompassNavProps> = ({ 
+  items, 
+  activeSection, 
+  onNavigate, 
+  orientation = 'right' 
+}) => {
   const rotatorRef = useRef<SVGGElement>(null);
   const [currentAngle, setCurrentAngle] = useState(60);
   const velocityRef = useRef(0);
   const targetRef = useRef(60);
   const animationFrameRef = useRef<number>();
 
+  // Transform angles based on orientation
+  // Right semicircle: angles from +90 to -90 (original)
+  // Top semicircle: angles from 180 to 0 (rotate by 90 degrees)
+  const transformAngle = useCallback((angle: number) => {
+    if (orientation === 'top') {
+      return angle - 90; // Rotate 90° counter-clockwise
+    }
+    return angle;
+  }, [orientation]);
+
   const sectionAngles: Record<string, number> = {};
   items.forEach(item => {
     sectionAngles[item.id] = item.angle;
   });
 
-  const pivot = { x: 0, y: 100 };
+  // Pivot and geometry based on orientation
+  const isTop = orientation === 'top';
+  const pivot = isTop ? { x: 100, y: 0 } : { x: 0, y: 100 };
   const dotRadius = 72;
   const labelOffset = 22;
 
@@ -40,7 +58,8 @@ const CompassNav: React.FC<CompassNavProps> = ({ items, activeSection, onNavigat
     setCurrentAngle(newAngle);
 
     if (rotatorRef.current) {
-      rotatorRef.current.setAttribute('transform', `rotate(${-newAngle})`);
+      const displayAngle = transformAngle(-newAngle);
+      rotatorRef.current.setAttribute('transform', `rotate(${displayAngle})`);
       
       // Motion blur effect
       if (Math.abs(velocityRef.current) > 0.8) {
@@ -51,7 +70,7 @@ const CompassNav: React.FC<CompassNavProps> = ({ items, activeSection, onNavigat
     }
 
     animationFrameRef.current = requestAnimationFrame(animateNeedle);
-  }, [currentAngle]);
+  }, [currentAngle, transformAngle]);
 
   useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(animateNeedle);
@@ -75,7 +94,9 @@ const CompassNav: React.FC<CompassNavProps> = ({ items, activeSection, onNavigat
   };
 
   const calculatePosition = (angle: number) => {
-    const rad = (-angle) * Math.PI / 180;
+    // For top orientation, rotate the angle by -90 degrees
+    const adjustedAngle = isTop ? angle - 90 : angle;
+    const rad = (-adjustedAngle) * Math.PI / 180;
     const cx = pivot.x + Math.cos(rad) * dotRadius;
     const cy = pivot.y + Math.sin(rad) * dotRadius;
     const tx = pivot.x + Math.cos(rad) * (dotRadius + labelOffset);
@@ -83,11 +104,49 @@ const CompassNav: React.FC<CompassNavProps> = ({ items, activeSection, onNavigat
     return { cx, cy, tx, ty };
   };
 
+  // Generate arc paths based on orientation
+  const getArcPaths = () => {
+    if (isTop) {
+      // Top semicircle (180° to 0°) - arc below the pivot point
+      return {
+        outer: "M 20,0 A 80 80 0 0 1 180,0",
+        middle: "M 32,0 A 68 68 0 0 1 168,0",
+        inner: "M 10,0 A 90 90 0 0 1 190,0"
+      };
+    }
+    // Right semicircle (90° to -90°) - original
+    return {
+      outer: "M 0,20 A 80 80 0 0 1 0,180",
+      middle: "M 0,32 A 68 68 0 0 1 0,168",
+      inner: "M 0,10 A 90 90 0 0 1 0,190"
+    };
+  };
+
+  const arcPaths = getArcPaths();
+
+  // Get text anchor based on orientation and position
+  const getTextAnchor = (angle: number) => {
+    if (isTop) {
+      return "middle";
+    }
+    return "start";
+  };
+
+  const getTextDominantBaseline = (angle: number) => {
+    if (isTop) {
+      return "hanging";
+    }
+    return "middle";
+  };
+
   return (
-    <div className="w-full h-full flex items-center justify-center md:justify-start">
-      <div className="w-[280px] sm:w-[320px] md:w-[360px] lg:w-[400px] max-w-full">
+    <div className={`w-full h-full flex items-center ${isTop ? 'justify-center' : 'justify-center md:justify-start'}`}>
+      <div className={isTop 
+        ? "w-full max-w-[400px] h-[120px]" 
+        : "w-[280px] sm:w-[320px] md:w-[360px] lg:w-[400px] max-w-full"
+      }>
         <svg 
-          viewBox="0 0 200 200" 
+          viewBox={isTop ? "0 -10 200 110" : "0 0 200 200"}
           preserveAspectRatio="xMidYMid meet" 
           className="w-full h-auto compass-shadow"
         >
@@ -103,19 +162,19 @@ const CompassNav: React.FC<CompassNavProps> = ({ items, activeSection, onNavigat
 
           {/* Arc backgrounds */}
           <path 
-            d="M 0,20 A 80 80 0 0 1 0,180" 
+            d={arcPaths.outer}
             fill="none" 
             className="stroke-compass-arc" 
             strokeWidth="2.2" 
           />
           <path 
-            d="M 0,32 A 68 68 0 0 1 0,168" 
+            d={arcPaths.middle}
             fill="none" 
             className="stroke-compass-arc-inner" 
             strokeWidth="1.2" 
           />
           <path 
-            d="M 0,10 A 90 90 0 0 1 0,190" 
+            d={arcPaths.inner}
             fill="none" 
             stroke="rgba(255,255,255,0.08)" 
             strokeWidth="0.8" 
@@ -154,8 +213,8 @@ const CompassNav: React.FC<CompassNavProps> = ({ items, activeSection, onNavigat
                       ? 'fill-compass-label-active' 
                       : 'fill-compass-label group-hover:fill-primary'
                   }`}
-                  dominantBaseline="middle"
-                  textAnchor="start"
+                  dominantBaseline={getTextDominantBaseline(item.angle)}
+                  textAnchor={getTextAnchor(item.angle)}
                 >
                   {item.label}
                 </text>
@@ -176,7 +235,7 @@ const CompassNav: React.FC<CompassNavProps> = ({ items, activeSection, onNavigat
 
           {/* Needle system */}
           <g transform={`translate(${pivot.x} ${pivot.y})`}>
-            <g ref={rotatorRef} transform={`rotate(${-currentAngle})`}>
+            <g ref={rotatorRef} transform={`rotate(${transformAngle(-currentAngle)})`}>
               <polygon 
                 points="0,0 12,-3 64,0 12,3" 
                 className="fill-compass-glow" 
