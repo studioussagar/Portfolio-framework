@@ -71,19 +71,7 @@ const Index = () => {
       </div>
 
       {/* Mobile Layout */}
-      <div className="md:hidden pb-20">
-        {/* Mobile Header with mini compass */}
-        <header className="sticky top-0 z-40 glass-panel border-b border-border/20 py-4 px-4">
-          <div className="flex items-center justify-center">
-            <div className="w-32 h-32">
-              <CompassNav
-                items={navItems}
-                activeSection={activeSection}
-                onNavigate={handleNavigate}
-              />
-            </div>
-          </div>
-        </header>
+      <div className="md:hidden pb-32">
 
         {/* Mobile Content */}
         <main className="relative overflow-hidden">
@@ -116,12 +104,17 @@ const Index = () => {
           </Section>
         </main>
 
-        {/* Mobile Bottom Navigation */}
-        <MobileCompassNav
-          items={navItems}
-          activeSection={activeSection}
-          onNavigate={handleNavigate}
-        />
+        {/* Mobile Bottom Compass Navigation */}
+        <nav className="fixed bottom-0 left-0 right-0 z-50 glass-panel border-t border-border/20">
+          <div className="px-4 py-2">
+            <CompassNav
+              items={navItems}
+              activeSection={activeSection}
+              onNavigate={handleNavigate}
+              orientation="top"
+            />
+          </div>
+        </nav>
       </div>
     </div>
   );
