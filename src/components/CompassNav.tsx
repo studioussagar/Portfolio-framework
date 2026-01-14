@@ -27,11 +27,12 @@ const CompassNav: React.FC<CompassNavProps> = ({
 
   // Transform angles based on orientation for needle rotation
   // Right semicircle: angles from +90 to -90 (original)
-  // Top semicircle: angles from 180 to 0 - needle points upward
+  // Top semicircle: angles from 180 to 0 - needle points upward into the arc
   const transformAngle = useCallback((angle: number) => {
     if (orientation === 'top') {
-      // For top orientation, convert the right-side angle to upward-pointing
-      return -(180 - angle); // Needle points up into the arc
+      // For top orientation: rotate needle to point upward
+      // angle 60 should point to upper-left, angle -60 to upper-right
+      return angle - 90;
     }
     return angle;
   }, [orientation]);
@@ -43,9 +44,10 @@ const CompassNav: React.FC<CompassNavProps> = ({
 
   // Pivot and geometry based on orientation
   const isTop = orientation === 'top';
-  const pivot = isTop ? { x: 100, y: 100 } : { x: 0, y: 100 };
-  const dotRadius = 72;
-  const labelOffset = 22;
+  // For top: pivot at bottom center, arc curves upward
+  const pivot = isTop ? { x: 100, y: 95 } : { x: 0, y: 100 };
+  const dotRadius = isTop ? 70 : 72;
+  const labelOffset = isTop ? 18 : 22;
 
   // Spring physics animation
   const animateNeedle = useCallback(() => {
@@ -96,9 +98,11 @@ const CompassNav: React.FC<CompassNavProps> = ({
 
   const calculatePosition = (angle: number) => {
     if (isTop) {
-      // For top orientation: arc curves upward, labels above, pivot at bottom center
-      // Angle 60 = left side, angle -60 = right side
-      const rad = (180 - angle) * Math.PI / 180;
+      // For top orientation: arc curves upward from pivot at bottom
+      // Map original angles (60 to -60) to positions on top semicircle (180° to 0°)
+      // angle 60 -> 120° (upper left), angle 0 -> 90° (top), angle -60 -> 60° (upper right)
+      const mappedAngle = 90 + angle; // 60->150, 30->120, 0->90, -30->60, -60->30
+      const rad = mappedAngle * Math.PI / 180;
       const cx = pivot.x + Math.cos(rad) * dotRadius;
       const cy = pivot.y - Math.sin(rad) * dotRadius;
       const tx = pivot.x + Math.cos(rad) * (dotRadius + labelOffset);
@@ -117,12 +121,11 @@ const CompassNav: React.FC<CompassNavProps> = ({
   // Generate arc paths based on orientation
   const getArcPaths = () => {
     if (isTop) {
-      // Top semicircle - arc curves upward from pivot at bottom center (y=100)
-      // Sweep flag 0 = arc curves upward
+      // Top semicircle - arc curves upward, pivot at y=95
       return {
-        outer: "M 20,100 A 80 80 0 0 0 180,100",
-        middle: "M 32,100 A 68 68 0 0 0 168,100",
-        inner: "M 10,100 A 90 90 0 0 0 190,100"
+        outer: "M 25,95 A 75 75 0 0 1 175,95",
+        middle: "M 35,95 A 65 65 0 0 1 165,95",
+        inner: "M 15,95 A 85 85 0 0 1 185,95"
       };
     }
     // Right semicircle (90° to -90°) - original
@@ -153,11 +156,11 @@ const CompassNav: React.FC<CompassNavProps> = ({
   return (
     <div className={`w-full h-full flex items-center ${isTop ? 'justify-center' : 'justify-center md:justify-start'}`}>
       <div className={isTop 
-        ? "w-full max-w-[400px] h-[120px]" 
+        ? "w-full max-w-[400px] h-[130px]" 
         : "w-[280px] sm:w-[320px] md:w-[360px] lg:w-[400px] max-w-full"
       }>
         <svg 
-          viewBox={isTop ? "0 0 200 110" : "0 0 200 200"}
+          viewBox={isTop ? "0 -5 200 105" : "0 0 200 200"}
           preserveAspectRatio="xMidYMid meet" 
           className="w-full h-auto compass-shadow"
         >
