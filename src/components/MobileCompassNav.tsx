@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 interface NavItem {
   id: string;
@@ -19,59 +19,67 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
 }) => {
   const rotatorRef = useRef<SVGGElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const isDraggingRef = useRef(false);
-  const dragStartedRef = useRef(false);
-  const startPosRef = useRef({ x: 0, y: 0 });
-  const pointerIdRef = useRef<number | null>(null);
-
-  const [currentAngle, setCurrentAngle] = useState(() => {
-    const activeItem = items.find(i => i.id === activeSection);
-    return activeItem?.angle ?? 60;
-  });
   
+  // Use refs for all mutable state to avoid stale closures
+  const isDraggingRef = useRef(false);
+  const currentAngleRef = useRef(60);
   const velocityRef = useRef(0);
-  const targetRef = useRef(currentAngle);
+  const targetAngleRef = useRef(60);
   const animationFrameRef = useRef<number>();
+  const startPosRef = useRef({ x: 0, y: 0 });
+  const hasDraggedRef = useRef(false);
 
   /* ============ Geometry Constants ============ */
-
   const pivot = { x: 100, y: 5 };
   const dotRadius = 64;
   const labelOffset = 40;
   const lineGap = 14;
-  const DRAG_THRESHOLD = 8;
+  const DRAG_THRESHOLD = 5;
 
-  const transformAngle = useCallback((angle: number) => angle + 90, []);
+  const transformAngle = (angle: number) => angle + 90;
+
+  /* ============ Navigation Helper ============ */
+  const navigateToSection = useCallback((sectionId: string) => {
+    const section = items.find(i => i.id === sectionId);
+    if (section) {
+      targetAngleRef.current = section.angle;
+      onNavigate(sectionId);
+    }
+  }, [items, onNavigate]);
+
+  const snapToNearest = useCallback(() => {
+    const currentAngle = currentAngleRef.current;
+    let closest = items[0];
+    let minDiff = Math.abs(items[0].angle - currentAngle);
+    
+    for (const item of items) {
+      const diff = Math.abs(item.angle - currentAngle);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = item;
+      }
+    }
+    
+    targetAngleRef.current = closest.angle;
+    onNavigate(closest.id);
+  }, [items, onNavigate]);
 
   /* ============ Spring Animation ============ */
-
   useEffect(() => {
     const animate = () => {
-      if (isDraggingRef.current) {
-        // During drag, directly set needle position
-        if (rotatorRef.current) {
-          rotatorRef.current.setAttribute(
-            'transform',
-            `rotate(${transformAngle(-currentAngle)})`
-          );
-        }
-        animationFrameRef.current = requestAnimationFrame(animate);
-        return;
-      }
-
       const stiffness = 0.12;
       const damping = 0.82;
 
-      const force = (targetRef.current - currentAngle) * stiffness;
-      velocityRef.current = velocityRef.current * damping + force;
-      const next = currentAngle + velocityRef.current;
-
-      setCurrentAngle(next);
+      if (!isDraggingRef.current) {
+        const force = (targetAngleRef.current - currentAngleRef.current) * stiffness;
+        velocityRef.current = velocityRef.current * damping + force;
+        currentAngleRef.current += velocityRef.current;
+      }
 
       if (rotatorRef.current) {
         rotatorRef.current.setAttribute(
           'transform',
-          `rotate(${transformAngle(-next)})`
+          `rotate(${transformAngle(-currentAngleRef.current)})`
         );
       }
 
@@ -84,18 +92,17 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [currentAngle, transformAngle]);
+  }, []);
 
   // Update target angle when active section changes (from scroll)
   useEffect(() => {
     const activeItem = items.find(i => i.id === activeSection);
     if (activeItem && !isDraggingRef.current) {
-      targetRef.current = activeItem.angle;
+      targetAngleRef.current = activeItem.angle;
     }
   }, [activeSection, items]);
 
   /* ============ Drag Math ============ */
-
   const getAngleFromEvent = (clientX: number, clientY: number): number | null => {
     if (!svgRef.current) return null;
 
@@ -118,97 +125,65 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
     return Math.atan2(dy, dx) * (180 / Math.PI);
   };
 
-  const snapToNearest = useCallback(() => {
-    const closest = items.reduce((prev, curr) =>
-      Math.abs(curr.angle - currentAngle) < Math.abs(prev.angle - currentAngle)
-        ? curr
-        : prev
-    );
-    targetRef.current = closest.angle;
-    onNavigate(closest.id);
-  }, [items, currentAngle, onNavigate]);
+  /* ============ Touch/Pointer Event Handlers ============ */
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch) return;
 
-  /* ============ Pointer Event Handlers ============ */
-
-  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    const target = e.target as SVGElement;
-    const navItem = target.closest('[data-nav-item]');
-    
-    if (navItem) {
-      // Handle label/dot click immediately
-      const sectionId = navItem.getAttribute('data-nav-item');
-      if (sectionId) {
-        e.preventDefault();
-        e.stopPropagation();
-        const section = items.find(i => i.id === sectionId);
-        if (section) {
-          targetRef.current = section.angle;
-          onNavigate(sectionId);
-        }
-      }
-      return;
-    }
-
-    // Start drag tracking for needle area
-    startPosRef.current = { x: e.clientX, y: e.clientY };
-    dragStartedRef.current = false;
-    pointerIdRef.current = e.pointerId;
-    svgRef.current?.setPointerCapture(e.pointerId);
+    startPosRef.current = { x: touch.clientX, y: touch.clientY };
+    hasDraggedRef.current = false;
     velocityRef.current = 0;
-  };
+  }, []);
 
-  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (pointerIdRef.current !== e.pointerId) return;
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch) return;
 
-    const dx = e.clientX - startPosRef.current.x;
-    const dy = e.clientY - startPosRef.current.y;
+    const dx = touch.clientX - startPosRef.current.x;
+    const dy = touch.clientY - startPosRef.current.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (!dragStartedRef.current && distance > DRAG_THRESHOLD) {
-      dragStartedRef.current = true;
+    if (!hasDraggedRef.current && distance > DRAG_THRESHOLD) {
+      hasDraggedRef.current = true;
       isDraggingRef.current = true;
     }
 
     if (!isDraggingRef.current) return;
 
-    const angle = getAngleFromEvent(e.clientX, e.clientY);
+    e.preventDefault();
+
+    const angle = getAngleFromEvent(touch.clientX, touch.clientY);
     if (angle === null) return;
 
     const mapped = 90 - angle;
-    // Clamp to valid range
     const clamped = Math.max(-70, Math.min(70, mapped));
-    setCurrentAngle(clamped);
-    targetRef.current = clamped;
-  };
+    currentAngleRef.current = clamped;
+    targetAngleRef.current = clamped;
+  }, []);
 
-  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (pointerIdRef.current === e.pointerId) {
-      svgRef.current?.releasePointerCapture(e.pointerId);
-      pointerIdRef.current = null;
-    }
-
+  const handleTouchEnd = useCallback(() => {
     if (isDraggingRef.current) {
       isDraggingRef.current = false;
-      dragStartedRef.current = false;
       snapToNearest();
     }
-  };
+    hasDraggedRef.current = false;
+  }, [snapToNearest]);
 
-  const handlePointerCancel = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (pointerIdRef.current === e.pointerId) {
-      svgRef.current?.releasePointerCapture(e.pointerId);
-      pointerIdRef.current = null;
+  /* ============ Label Click Handler ============ */
+  const handleLabelClick = useCallback((e: React.MouseEvent | React.TouchEvent, sectionId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Don't navigate if we just finished dragging
+    if (hasDraggedRef.current) {
+      hasDraggedRef.current = false;
+      return;
     }
-
-    if (isDraggingRef.current) {
-      isDraggingRef.current = false;
-      dragStartedRef.current = false;
-      snapToNearest();
-    }
-  };
+    
+    navigateToSection(sectionId);
+  }, [navigateToSection]);
 
   /* ============ Geometry ============ */
-
   const calculatePosition = (angle: number) => {
     const rad = (90 - angle) * (Math.PI / 180);
 
@@ -227,7 +202,6 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
   const isItemActive = (itemId: string) => itemId === activeSection;
 
   /* ============ Render ============ */
-
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 md:hidden safe-area-top glass-panel border-b border-border/20">
       <div className="w-full flex items-center justify-center pt-2 pb-4">
@@ -235,14 +209,10 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
           ref={svgRef}
           viewBox="-20 -10 240 140"
           className="w-full max-w-[400px] h-auto"
-          style={{
-            touchAction: 'none',
-            cursor: isDraggingRef.current ? 'grabbing' : 'grab'
-          }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerCancel}
+          style={{ touchAction: 'none' }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           <defs>
             <filter id="mobile-glow" x="-50%" y="-50%" width="200%" height="200%">
@@ -262,16 +232,21 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
             return (
               <g
                 key={item.id}
-                data-nav-item={item.id}
                 className="cursor-pointer"
-                style={{ touchAction: 'manipulation' }}
+                onClick={(e) => handleLabelClick(e, item.id)}
+                onTouchEnd={(e) => {
+                  if (!hasDraggedRef.current) {
+                    handleLabelClick(e, item.id);
+                  }
+                }}
               >
                 {/* Invisible touch target for better mobile tapping */}
                 <circle
                   cx={tx}
                   cy={ty}
-                  r={28}
+                  r={30}
                   fill="transparent"
+                  style={{ pointerEvents: 'auto' }}
                 />
 
                 {/* Connector Line */}
@@ -284,6 +259,7 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
                   strokeWidth={active ? '1.2' : '0.6'}
                   opacity={active ? '1' : '0.7'}
                   className="transition-all duration-300"
+                  style={{ pointerEvents: 'none' }}
                 />
 
                 {/* Dot */}
@@ -295,6 +271,7 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
                     active ? 'fill-compass-dot-active' : 'fill-compass-dot'
                   }`}
                   filter={active ? 'url(#mobile-glow)' : undefined}
+                  style={{ pointerEvents: 'none' }}
                 />
 
                 {/* Label */}
@@ -308,6 +285,7 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
                       ? 'text-[12px] sm:text-[13px] font-semibold fill-compass-label-active'
                       : 'text-[11px] sm:text-[12px] fill-compass-label'
                   }`}
+                  style={{ pointerEvents: 'none' }}
                 >
                   {item.label}
                 </text>
@@ -324,7 +302,7 @@ const MobileCompassNav: React.FC<MobileCompassNavProps> = ({
               {/* Needle glow / highlight */}
               <polygon
                 points="0,0 12,-3 64,0 12,3"
-                className="fill-compass-glow drop-shadow-md transition-all duration-150"
+                className="fill-compass-glow drop-shadow-md"
                 filter="url(#mobile-glow)"
               />
 
