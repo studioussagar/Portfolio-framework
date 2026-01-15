@@ -205,7 +205,23 @@ const CompassNav: React.FC<CompassNavProps> = ({
                 key={item.id}
                 className="cursor-pointer group"
                 onClick={() => handleClick(item)}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onPointerUp={(e) => {
+                  e.stopPropagation();
+                  handleClick(item);
+                }}
+                style={{ touchAction: 'manipulation' }}
               >
+                {/* Invisible touch target for better tapping */}
+                <circle
+                  cx={tx}
+                  cy={ty}
+                  r={24}
+                  fill="transparent"
+                />
+                
                 {/* Connector line */}
                 <line
                   x1={cx}
